@@ -1,0 +1,45 @@
+package cmd
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"time"
+
+	"github.com/slh/riftport/internal/database"
+	"github.com/slh/riftport/internal/fetch"
+	"github.com/spf13/cobra"
+)
+
+func newUpdateDBCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "update-db",
+		Short: "Download or refresh local card metadata",
+		Long: `Acquire card metadata from the configured remote source and store it locally.
+
+Conversion commands do not call the network. Run update-db manually whenever you
+want fresher card data.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			path := dbPath
+			if path == "" {
+				path = database.DefaultPath()
+			}
+			db, err := database.Open(path)
+			if err != nil {
+				return err
+			}
+			defer db.Close()
+
+			ctx, cancel := context.WithTimeout(cmd.Context(), 5*time.Minute)
+			defer cancel()
+
+			client := fetch.NewClient()
+			count, err := client.UpdateDB(ctx, db)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(os.Stdout, "updated %d cards in %s\n", count, path)
+			return nil
+		},
+	}
+}
