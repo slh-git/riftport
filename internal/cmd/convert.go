@@ -1,3 +1,5 @@
+// convert.go — convert command implementation.
+// Reads deck text, transforms between formats, and writes the result to stdout.
 package cmd
 
 import (
@@ -11,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// newConvertCmd creates the convert subcommand with --from and --to flags.
 func newConvertCmd() *cobra.Command {
 	var from string
 	var to string
@@ -62,21 +65,22 @@ func newConvertCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&from, "from", "auto", "input format: auto, names, tts, pixelborn, piltover, deckcode")
-	cmd.Flags().StringVar(&to, "to", "names", "output format: names, tts, pixelborn, piltover, deckcode")
+	cmd.Flags().StringVar(&from, "from", "auto", "input format: auto, names, tts, pixelborn, piltover, tcgarena, deckcode")
+	cmd.Flags().StringVar(&to, "to", "names", "output format: names, tts, pixelborn, piltover, tcgarena, deckcode")
 	return cmd
 }
 
+// needsDB reports whether the conversion requires a populated local card database.
 func needsDB(from, to convert.Format, input string) bool {
-	if from == convert.FormatNames || from == convert.FormatPiltover {
+	if from == convert.FormatNames || from == convert.FormatPiltover || from == convert.FormatTCGArena {
 		return true
 	}
-	if to == convert.FormatNames || to == convert.FormatPiltover {
+	if to == convert.FormatNames || to == convert.FormatPiltover || to == convert.FormatTCGArena {
 		return true
 	}
 	if from == convert.FormatAuto {
 		detected := convert.DetectFormat(input)
-		if detected == convert.FormatNames || detected == convert.FormatPiltover {
+		if detected == convert.FormatNames || detected == convert.FormatPiltover || detected == convert.FormatTCGArena {
 			return true
 		}
 	}
