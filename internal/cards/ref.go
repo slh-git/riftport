@@ -1,3 +1,5 @@
+// ref.go — card reference parsing and string formatting.
+// Handles short codes (OGN-265, OGN-007a) and TTS tokens (OGN-265-1).
 package cards
 
 import (

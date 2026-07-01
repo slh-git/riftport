@@ -1,3 +1,5 @@
+// update_db.go — update-db command implementation.
+// The only CLI command that performs network I/O; refreshes local card metadata.
 package cmd
 
 import (
@@ -11,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// newUpdateDBCmd creates the update-db subcommand.
 func newUpdateDBCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "update-db",

@@ -1,3 +1,4 @@
+// deckcode_test.go — round-trip tests for share-code encode/decode.
 package deckcode_test
 
 import (
@@ -8,6 +9,7 @@ import (
 	"github.com/slh/riftport/internal/deck"
 )
 
+// TestDeckCodeRoundTrip verifies encode then decode preserves main deck entry count.
 func TestDeckCodeRoundTrip(t *testing.T) {
 	original := deck.Deck{
 		Main: []deck.Entry{
@@ -29,6 +31,7 @@ func TestDeckCodeRoundTrip(t *testing.T) {
 	}
 }
 
+// mustRef parses a short code in tests or panics.
 func mustRef(code string) cards.Ref {
 	ref, err := cards.ParseShortCode(code)
 	if err != nil {

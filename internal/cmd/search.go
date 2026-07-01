@@ -1,3 +1,5 @@
+// search.go — search command implementation.
+// Queries the local FTS5 index and prints matching cards.
 package cmd
 
 import (
@@ -9,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// newSearchCmd creates the search subcommand with --limit flag.
 func newSearchCmd() *cobra.Command {
 	var limit int
 	cmd := &cobra.Command{

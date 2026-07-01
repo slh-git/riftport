@@ -1,3 +1,5 @@
+// deckcode.go — Piltover Archive share-code encoder and decoder.
+// Implements base32 + varint deck codes (CI…) per @piltoverarchive/riftbound-deck-codes.
 package deckcode
 
 import (
@@ -53,6 +55,7 @@ type countedCard struct {
 	Count int
 }
 
+// Decode parses a share code string into a deck.Deck.
 func Decode(code string) (deck.Deck, error) {
 	code = strings.TrimSpace(code)
 	bytes, err := base32Decode(code)
@@ -102,6 +105,7 @@ func Decode(code string) (deck.Deck, error) {
 	return toDeck(mainCards, sideCards, champion), nil
 }
 
+// Encode serializes a deck.Deck into a share code string.
 func Encode(d deck.Deck) (string, error) {
 	main := entriesToCounted(d.Main)
 	side := entriesToCounted(d.Sideboard)
@@ -129,6 +133,7 @@ func Encode(d deck.Deck) (string, error) {
 	return base32Encode(out), nil
 }
 
+// decodeSection decodes main (maxCount 12) or sideboard (maxCount 3) card groups.
 func decodeSection(tr *varintTranslator, maxCount int, version byte) ([]countedCard, error) {
 	var result []countedCard
 	for count := maxCount; count >= 1; count-- {
@@ -185,6 +190,7 @@ func decodeSection(tr *varintTranslator, maxCount int, version byte) ([]countedC
 	return result, nil
 }
 
+// decodeChampion decodes the optional chosen champion field (format v3+).
 func decodeChampion(tr *varintTranslator, version byte) (cards.Ref, error) {
 	setID, err := tr.popByte()
 	if err != nil {
@@ -228,6 +234,7 @@ type setVariantGroup struct {
 	numbers []string
 }
 
+// encodeSection encodes card groups by copy count, set, and variant.
 func encodeSection(cardsList []countedCard, maxCount int, version byte) []byte {
 	var out []byte
 	for count := maxCount; count >= 1; count-- {
@@ -263,6 +270,7 @@ func encodeSection(cardsList []countedCard, maxCount int, version byte) []byte {
 	return out
 }
 
+// groupBySetVariant groups cards for compact varint encoding.
 func groupBySetVariant(items []countedCard) []setVariantGroup {
 	m := map[string]*setVariantGroup{}
 	for _, item := range items {
@@ -296,6 +304,7 @@ func groupBySetVariant(items []countedCard) []setVariantGroup {
 	return groups
 }
 
+// encodeChampion writes the chosen champion bytes into the code payload.
 func encodeChampion(ref cards.Ref, version byte) []byte {
 	var out []byte
 	out = append(out, setMap[ref.SetID], variantMap[ref.Variant])
@@ -312,6 +321,7 @@ func encodeChampion(ref cards.Ref, version byte) []byte {
 	return out
 }
 
+// entriesToCounted converts deck entries to internal counted-card slices.
 func entriesToCounted(entries []deck.Entry) []countedCard {
 	out := make([]countedCard, 0, len(entries))
 	for _, e := range entries {
@@ -320,6 +330,7 @@ func entriesToCounted(entries []deck.Entry) []countedCard {
 	return out
 }
 
+// toDeck builds a deck.Deck from decoded counted cards and optional champion.
 func toDeck(main, side []countedCard, champion *cards.Ref) deck.Deck {
 	d := deck.Deck{ChosenChampion: champion}
 	for _, c := range main {
@@ -331,6 +342,7 @@ func toDeck(main, side []countedCard, champion *cards.Ref) deck.Deck {
 	return d
 }
 
+// base32Encode encodes bytes using the deck-code base32 alphabet.
 func base32Encode(data []byte) string {
 	var result strings.Builder
 	var buffer uint
@@ -350,6 +362,7 @@ func base32Encode(data []byte) string {
 	return result.String()
 }
 
+// base32Decode decodes a deck code string into raw bytes.
 func base32Decode(s string) ([]byte, error) {
 	var out []byte
 	var buffer uint
@@ -373,10 +386,12 @@ type varintTranslator struct {
 	data []byte
 }
 
+// newVarintTranslator creates a byte reader for deck code payloads.
 func newVarintTranslator(data []byte) *varintTranslator {
 	return &varintTranslator{data: append([]byte(nil), data...)}
 }
 
+// popByte reads and consumes one byte from the translator buffer.
 func (v *varintTranslator) popByte() (byte, error) {
 	if len(v.data) == 0 {
 		return 0, fmt.Errorf("unexpected end of deck code bytes")
@@ -386,6 +401,7 @@ func (v *varintTranslator) popByte() (byte, error) {
 	return b, nil
 }
 
+// popVarint reads and consumes one variable-length integer.
 func (v *varintTranslator) popVarint() (int, error) {
 	if len(v.data) == 0 {
 		return 0, fmt.Errorf("no bytes available to read varint")
@@ -405,6 +421,7 @@ func (v *varintTranslator) popVarint() (int, error) {
 	return 0, fmt.Errorf("invalid varint in deck code")
 }
 
+// encodeVarint writes a variable-length integer as bytes.
 func encodeVarint(value int) []byte {
 	if value == 0 {
 		return []byte{0}

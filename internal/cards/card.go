@@ -1,3 +1,5 @@
+// card.go — locally stored card metadata model.
+// Represents one card row from the SQLite database.
 package cards
 
 import "time"
@@ -20,6 +22,7 @@ type Card struct {
 	UpdatedAt       time.Time
 }
 
+// Ref converts stored card fields into a cards.Ref for deck conversion.
 func (c Card) Ref() Ref {
 	return Ref{
 		SetID:           c.SetID,

@@ -1,3 +1,5 @@
+// riftscribe.go — RiftScribe API client for update-db.
+// Paginates the public /api/cards endpoint and upserts into the local database.
 package fetch
 
 import (
@@ -16,11 +18,13 @@ import (
 
 const defaultBaseURL = "https://riftscribe.gg/api"
 
+// Client fetches card data from the RiftScribe HTTP API.
 type Client struct {
 	BaseURL    string
 	HTTPClient *http.Client
 }
 
+// NewClient returns a client with the default API base URL and timeout.
 func NewClient() *Client {
 	return &Client{
 		BaseURL: defaultBaseURL,
@@ -50,6 +54,7 @@ type apiStats struct {
 	Power  *int `json:"power"`
 }
 
+// UpdateDB downloads all cards, upserts them, rebuilds the search index, and sets metadata.
 func (c *Client) UpdateDB(ctx context.Context, db *database.DB) (int, error) {
 	offset := 0
 	limit := 200
@@ -92,6 +97,7 @@ func (c *Client) UpdateDB(ctx context.Context, db *database.DB) (int, error) {
 	return total, nil
 }
 
+// listCards fetches one page of cards from the API.
 func (c *Client) listCards(ctx context.Context, limit, offset int) ([]apiCard, int, error) {
 	url := fmt.Sprintf("%s/cards?limit=%d&offset=%d", strings.TrimRight(c.BaseURL, "/"), limit, offset)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -118,6 +124,7 @@ func (c *Client) listCards(ctx context.Context, limit, offset int) ([]apiCard, i
 	return batch, total, nil
 }
 
+// toCard maps API JSON into a cards.Card with normalized set ID.
 func toCard(raw apiCard, now time.Time) cards.Card {
 	c := cards.Card{
 		ID:              raw.ID,

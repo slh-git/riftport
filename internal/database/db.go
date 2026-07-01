@@ -1,3 +1,5 @@
+// db.go — SQLite card database, schema migration, and FTS5 search index.
+// Stores card metadata locally for offline convert, inspect, and search.
 package database
 
 import (
@@ -49,10 +51,12 @@ CREATE VIRTUAL TABLE IF NOT EXISTS cards_fts USING fts5(
 );
 `
 
+// DB wraps a SQLite connection and card/search operations.
 type DB struct {
 	sql *sql.DB
 }
 
+// DefaultPath returns the default database file path (~/.riftport/cards.db).
 func DefaultPath() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -61,6 +65,7 @@ func DefaultPath() string {
 	return filepath.Join(home, ".riftport", "cards.db")
 }
 
+// Open opens or creates the database at path and applies migrations.
 func Open(path string) (*DB, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
@@ -77,10 +82,12 @@ func Open(path string) (*DB, error) {
 	return db, nil
 }
 
+// Close closes the underlying database connection.
 func (db *DB) Close() error {
 	return db.sql.Close()
 }
 
+// migrate applies the cards, meta, and FTS5 schema if not present.
 func (db *DB) migrate() error {
 	if _, err := db.sql.Exec(schema); err != nil {
 		return fmt.Errorf("migrate: %w", err)
@@ -88,6 +95,7 @@ func (db *DB) migrate() error {
 	return nil
 }
 
+// UpsertCard inserts or updates one card record.
 func (db *DB) UpsertCard(ctx context.Context, c cards.Card) error {
 	_, err := db.sql.ExecContext(ctx, `
 		INSERT INTO cards (
@@ -117,6 +125,7 @@ func (db *DB) UpsertCard(ctx context.Context, c cards.Card) error {
 	return err
 }
 
+// RebuildSearchIndex repopulates the FTS5 table from the cards table.
 func (db *DB) RebuildSearchIndex(ctx context.Context) error {
 	tx, err := db.sql.BeginTx(ctx, nil)
 	if err != nil {
@@ -136,6 +145,7 @@ func (db *DB) RebuildSearchIndex(ctx context.Context) error {
 	return tx.Commit()
 }
 
+// SetMeta stores a key-value metadata entry (e.g. last_updated, source).
 func (db *DB) SetMeta(ctx context.Context, key, value string) error {
 	_, err := db.sql.ExecContext(ctx, `
 		INSERT INTO meta(key, value) VALUES(?, ?)
@@ -144,6 +154,7 @@ func (db *DB) SetMeta(ctx context.Context, key, value string) error {
 	return err
 }
 
+// GetMeta retrieves a metadata value; the bool is false when the key is missing.
 func (db *DB) GetMeta(ctx context.Context, key string) (string, bool, error) {
 	var value string
 	err := db.sql.QueryRowContext(ctx, `SELECT value FROM meta WHERE key = ?`, key).Scan(&value)
@@ -156,12 +167,14 @@ func (db *DB) GetMeta(ctx context.Context, key string) (string, bool, error) {
 	return value, true, nil
 }
 
+// Count returns the total number of cards in the database.
 func (db *DB) Count(ctx context.Context) (int, error) {
 	var n int
 	err := db.sql.QueryRowContext(ctx, `SELECT COUNT(*) FROM cards`).Scan(&n)
 	return n, err
 }
 
+// GetByID looks up a card by full database ID (case-insensitive).
 func (db *DB) GetByID(ctx context.Context, id string) (cards.Card, error) {
 	return db.scanCard(db.sql.QueryRowContext(ctx, `
 		SELECT id, name, set_id, collector_number, variant,
@@ -171,6 +184,7 @@ func (db *DB) GetByID(ctx context.Context, id string) (cards.Card, error) {
 	`, id))
 }
 
+// GetByRef looks up a card by set, collector number, and variant.
 func (db *DB) GetByRef(ctx context.Context, ref cards.Ref) (cards.Card, error) {
 	return db.scanCard(db.sql.QueryRowContext(ctx, `
 		SELECT id, name, set_id, collector_number, variant,
@@ -182,6 +196,7 @@ func (db *DB) GetByRef(ctx context.Context, ref cards.Ref) (cards.Card, error) {
 	`, ref.SetID, ref.CollectorNumber, ref.Variant))
 }
 
+// GetByName looks up a card by exact case-insensitive name match.
 func (db *DB) GetByName(ctx context.Context, name string) (cards.Card, error) {
 	trimmed := strings.TrimSpace(name)
 	return db.scanCard(db.sql.QueryRowContext(ctx, `
@@ -195,11 +210,13 @@ func (db *DB) GetByName(ctx context.Context, name string) (cards.Card, error) {
 	`, trimmed))
 }
 
+// SearchResult pairs a card with its FTS relevance rank.
 type SearchResult struct {
 	Card cards.Card
 	Rank float64
 }
 
+// Search performs a trigram FTS5 query and returns ranked results.
 func (db *DB) Search(ctx context.Context, query string, limit int) ([]SearchResult, error) {
 	if limit <= 0 {
 		limit = 20
@@ -254,6 +271,7 @@ func (db *DB) Search(ctx context.Context, query string, limit int) ([]SearchResu
 	return out, rows.Err()
 }
 
+// scanCard reads one cards row from a sql.Row into a cards.Card.
 func (db *DB) scanCard(row *sql.Row) (cards.Card, error) {
 	var c cards.Card
 	var rarity, faction, typ, orientation sql.NullString
@@ -280,11 +298,13 @@ func (db *DB) scanCard(row *sql.Row) (cards.Card, error) {
 	return c, nil
 }
 
+// ftsQuery wraps a user query as an FTS5 phrase search.
 func ftsQuery(q string) string {
 	escaped := strings.ReplaceAll(q, `"`, `""`)
 	return `"` + escaped + `"`
 }
 
+// nullString converts a Go string to sql.NullString for optional DB columns.
 func nullString(s string) sql.NullString {
 	if s == "" {
 		return sql.NullString{}
@@ -292,6 +312,7 @@ func nullString(s string) sql.NullString {
 	return sql.NullString{String: s, Valid: true}
 }
 
+// nullInt converts an optional int pointer to sql.NullInt64.
 func nullInt(v *int) sql.NullInt64 {
 	if v == nil {
 		return sql.NullInt64{}
@@ -299,6 +320,7 @@ func nullInt(v *int) sql.NullInt64 {
 	return sql.NullInt64{Int64: int64(*v), Valid: true}
 }
 
+// boolInt converts a bool to SQLite integer 0/1.
 func boolInt(b bool) int {
 	if b {
 		return 1
@@ -306,6 +328,7 @@ func boolInt(b bool) int {
 	return 0
 }
 
+// intPtr converts sql.NullInt64 to an optional int pointer.
 func intPtr(v sql.NullInt64) *int {
 	if !v.Valid {
 		return nil

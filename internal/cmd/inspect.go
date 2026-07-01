@@ -1,3 +1,5 @@
+// inspect.go — inspect command implementation.
+// Looks up a single card offline by database ID, short code, or TTS token.
 package cmd
 
 import (
@@ -11,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// newInspectCmd creates the inspect subcommand.
 func newInspectCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "inspect <card-id-or-code>",
@@ -71,6 +74,7 @@ func newInspectCmd() *cobra.Command {
 	}
 }
 
+// intOrDash formats an optional integer stat for terminal output.
 func intOrDash(v *int) string {
 	if v == nil {
 		return "-"
