@@ -1,5 +1,5 @@
-// deckcode.go — Piltover Archive share-code encoder and decoder.
-// Implements base32 + varint deck codes (CI…) per @piltoverarchive/riftbound-deck-codes.
+// deckcode.go — share-code encoder and decoder for CI… deck strings.
+// Uses base32 encoding and varint compression.
 package deckcode
 
 import (

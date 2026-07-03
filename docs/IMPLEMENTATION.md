@@ -1,40 +1,10 @@
-# Riftport — Implementation Record
+# Riftport — Architecture Reference
 
-This document records exactly what was built, why external research was used, and what each file in the repository does.
+Technical reference for repository layout, file responsibilities, data flow, and dependencies.
 
 ---
 
-## What was done
-
-### Starting state
-
-The repository was empty: no commits, no source code, no README, no remote. Only a handoff brief describing four CLI commands and separation of concerns.
-
-### Research performed (before coding)
-
-Because no specs existed in the repo, the following was looked up externally:
-
-| Source | Why |
-|--------|-----|
-| [RiftScribe API](https://riftscribe.gg/api/cards) | Public, unauthenticated card JSON for `update-db` (no Riot API key required) |
-| [silhouette-card-maker Riftbound plugin](https://github.com/Alan-Cha/silhouette-card-maker/blob/main/plugins/riftbound/README.md) | TTS, Pixelborn, and Piltover text format examples |
-| [@piltoverarchive/riftbound-deck-codes](https://www.npmjs.com/package/@piltoverarchive/riftbound-deck-codes) | `CI…` share-code spec (base32 + varint); reference JS was read to port the codec |
-
-No runtime network calls were added to `convert`, `inspect`, or `search`. Only `update-db` fetches remotely.
-
-### Build steps executed
-
-1. Initialized Go module `github.com/slh/riftport`
-2. Implemented SQLite local card store with FTS5 trigram search
-3. Implemented RiftScribe paginated fetcher for `update-db`
-4. Implemented deck conversion pipeline: detect → parse → resolve (names) → render
-5. Ported Piltover Archive deck code encode/decode (v1–v4)
-6. Wired Cobra CLI with four commands
-7. Wrote `README.md` with usage and architecture
-8. Ran `go test ./...`, built binary, verified against live API (~950 cards)
-9. Committed and pushed to https://github.com/slh-git/riftport
-
-### Commands delivered
+## Commands
 
 ```text
 riftport update-db   → fetch card metadata into ~/.riftport/cards.db
@@ -270,7 +240,7 @@ riftport/
 
 ### `internal/convert/deckcode/deckcode.go`
 
-**Purpose:** Piltover Archive share-code codec (ported from `@piltoverarchive/riftbound-deck-codes`).
+**Purpose:** Share-code codec for `CI…` deck strings (base32 + varint, v1–v4).
 
 | Function | Description |
 |----------|-------------|
