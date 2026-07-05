@@ -180,6 +180,10 @@ riftport/
 
 **Purpose:** RiftScribe HTTP client used exclusively by `update-db`.
 
+See [RIFTSCRIBE_API.md](RIFTSCRIBE_API.md) for endpoint schemas (`CardRead` vs `CardSummaryRead`), pagination, and what fields are available from each route.
+
+Alternative data source: [RIFTCODEX_API.md](RIFTCODEX_API.md).
+
 | Function | Description |
 |----------|-------------|
 | `NewClient` | Client with 30s timeout and default API base URL |

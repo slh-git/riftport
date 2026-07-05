@@ -4,7 +4,9 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
+	"runtime"
 
 	"github.com/spf13/cobra"
 )
@@ -50,4 +52,27 @@ func readInput(args []string) (string, error) {
 		return "", fmt.Errorf("no input: provide a file argument or pipe deck text on stdin")
 	}
 	return string(data), nil
+}
+
+// readInteractiveInput prompts on stderr and reads a pasted deck list from the terminal.
+func readInteractiveInput() (string, error) {
+	fmt.Fprintf(os.Stderr, "Paste your deck list below, then press %s when done:\n\n", finishInteractiveHint())
+
+	reader := io.Reader(os.Stdin)
+	if runtime.GOOS != "windows" {
+		if tty, err := os.Open("/dev/tty"); err == nil {
+			defer tty.Close()
+			reader = tty
+		}
+	}
+
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return "", err
+	}
+	text := string(data)
+	if trimInput(text) == "" {
+		return "", fmt.Errorf("no input provided")
+	}
+	return text, nil
 }

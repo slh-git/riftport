@@ -17,13 +17,24 @@ import (
 func newConvertCmd() *cobra.Command {
 	var from string
 	var to string
+	var interactive bool
 
 	cmd := &cobra.Command{
 		Use:   "convert [file|-]",
 		Short: "Transform deck text between supported formats",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			input, err := readInput(args)
+			if interactive && len(args) > 0 {
+				return fmt.Errorf("interactive mode does not accept a file argument")
+			}
+
+			var input string
+			var err error
+			if interactive {
+				input, err = readInteractiveInput()
+			} else {
+				input, err = readInput(args)
+			}
 			if err != nil {
 				return err
 			}
@@ -61,12 +72,19 @@ func newConvertCmd() *cobra.Command {
 				return err
 			}
 			fmt.Fprintln(os.Stdout, out)
+			if interactive {
+				if err := writeClipboard(out); err != nil {
+					return fmt.Errorf("converted output printed above, but clipboard copy failed: %w (install %s)", err, clipboardToolName())
+				}
+				fmt.Fprintf(os.Stderr, "\nCopied %s output to clipboard.\n", toFmt)
+			}
 			return nil
 		},
 	}
 
 	cmd.Flags().StringVar(&from, "from", "auto", "input format: auto, names, tts, pixelborn, piltover, tcgarena, deckcode")
 	cmd.Flags().StringVar(&to, "to", "names", "output format: names, tts, pixelborn, piltover, tcgarena, deckcode")
+	cmd.Flags().BoolVarP(&interactive, "interactive", "i", false, "paste deck text interactively and copy result to clipboard")
 	return cmd
 }
 
