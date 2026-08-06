@@ -36,12 +36,19 @@ want fresher card data.`,
 			ctx, cancel := context.WithTimeout(cmd.Context(), 5*time.Minute)
 			defer cancel()
 
-			client := fetch.NewClient()
-			count, err := client.UpdateDB(ctx, db)
+			result, err := fetch.UpdateDB(
+				ctx,
+				db,
+				fetch.NewRiftCodexClient(),
+				fetch.NewRiftScribeClient(),
+			)
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(os.Stdout, "updated %d cards in %s\n", count, path)
+			for _, failure := range result.Failures {
+				fmt.Fprintf(os.Stderr, "warning: %s unavailable: %v\n", failure.Source, failure.Err)
+			}
+			fmt.Fprintf(os.Stdout, "updated %d cards from %s in %s\n", result.Count, result.Source, path)
 			return nil
 		},
 	}

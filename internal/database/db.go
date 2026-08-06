@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/slh/riftport/internal/cards"
 	_ "modernc.org/sqlite"
@@ -19,6 +20,7 @@ const schema = `
 CREATE TABLE IF NOT EXISTS cards (
 	id TEXT PRIMARY KEY,
 	name TEXT NOT NULL,
+	name_key TEXT NOT NULL,
 	set_id TEXT NOT NULL,
 	collector_number INTEGER NOT NULL,
 	variant TEXT NOT NULL DEFAULT '',
@@ -92,19 +94,43 @@ func (db *DB) migrate() error {
 	if _, err := db.sql.Exec(schema); err != nil {
 		return fmt.Errorf("migrate: %w", err)
 	}
+	hasNameKey, err := db.hasColumn("cards", "name_key")
+	if err != nil {
+		return fmt.Errorf("inspect schema: %w", err)
+	}
+	if !hasNameKey {
+		if _, err := db.sql.Exec(`ALTER TABLE cards ADD COLUMN name_key TEXT NOT NULL DEFAULT ''`); err != nil {
+			return fmt.Errorf("add cards.name_key: %w", err)
+		}
+	}
+	if err := db.backfillNameKeys(); err != nil {
+		return fmt.Errorf("backfill cards.name_key: %w", err)
+	}
+	if _, err := db.sql.Exec(`CREATE INDEX IF NOT EXISTS idx_cards_name_key ON cards(name_key)`); err != nil {
+		return fmt.Errorf("index cards.name_key: %w", err)
+	}
 	return nil
 }
 
 // UpsertCard inserts or updates one card record.
 func (db *DB) UpsertCard(ctx context.Context, c cards.Card) error {
-	_, err := db.sql.ExecContext(ctx, `
+	return upsertCard(ctx, db.sql, c)
+}
+
+type cardExecer interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}
+
+func upsertCard(ctx context.Context, execer cardExecer, c cards.Card) error {
+	_, err := execer.ExecContext(ctx, `
 		INSERT INTO cards (
-			id, name, set_id, collector_number, variant,
+			id, name, name_key, set_id, collector_number, variant,
 			rarity, faction, type, orientation,
 			energy, might, power, is_banned, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name=excluded.name,
+			name_key=excluded.name_key,
 			set_id=excluded.set_id,
 			collector_number=excluded.collector_number,
 			variant=excluded.variant,
@@ -118,11 +144,50 @@ func (db *DB) UpsertCard(ctx context.Context, c cards.Card) error {
 			is_banned=excluded.is_banned,
 			updated_at=excluded.updated_at
 	`,
-		c.ID, c.Name, c.SetID, c.CollectorNumber, c.Variant,
+		c.ID, c.Name, normalizeNameKey(c.Name), c.SetID, c.CollectorNumber, c.Variant,
 		nullString(c.Rarity), nullString(c.Faction), nullString(c.Type), nullString(c.Orientation),
 		nullInt(c.Energy), nullInt(c.Might), nullInt(c.Power), boolInt(c.IsBanned), c.UpdatedAt.UTC().Format(time.RFC3339),
 	)
 	return err
+}
+
+// ReplaceCards atomically replaces all cards, rebuilds search, and updates metadata.
+func (db *DB) ReplaceCards(ctx context.Context, snapshot []cards.Card, metadata map[string]string) error {
+	if len(snapshot) == 0 {
+		return fmt.Errorf("refusing to replace cards with an empty snapshot")
+	}
+	tx, err := db.sql.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM cards_fts`); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM cards`); err != nil {
+		return err
+	}
+	for _, card := range snapshot {
+		if err := upsertCard(ctx, tx, card); err != nil {
+			return fmt.Errorf("upsert card %q: %w", card.ID, err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO cards_fts(card_id, name, set_id, type, faction)
+		SELECT id, name, set_id, COALESCE(type, ''), COALESCE(faction, '') FROM cards
+	`); err != nil {
+		return err
+	}
+	for key, value := range metadata {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO meta(key, value) VALUES(?, ?)
+			ON CONFLICT(key) DO UPDATE SET value=excluded.value
+		`, key, value); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // RebuildSearchIndex repopulates the FTS5 table from the cards table.
@@ -204,10 +269,11 @@ func (db *DB) GetByName(ctx context.Context, name string) (cards.Card, error) {
 			rarity, faction, type, orientation,
 			energy, might, power, is_banned, updated_at
 		FROM cards
-		WHERE lower(name) = lower(?)
-		ORDER BY variant
+		WHERE name_key = ?
+		ORDER BY CASE WHEN lower(name) = lower(?) THEN 0 ELSE 1 END,
+			variant, set_id, collector_number
 		LIMIT 1
-	`, trimmed))
+	`, normalizeNameKey(trimmed), trimmed))
 }
 
 // SearchResult pairs a card with its FTS relevance rank.
@@ -335,4 +401,60 @@ func intPtr(v sql.NullInt64) *int {
 	}
 	n := int(v.Int64)
 	return &n
+}
+
+func (db *DB) hasColumn(table, column string) (bool, error) {
+	rows, err := db.sql.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid, notNull, pk int
+		var name, typ string
+		var defaultValue sql.NullString
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
+			return false, err
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
+}
+
+func (db *DB) backfillNameKeys() error {
+	rows, err := db.sql.Query(`SELECT id, name FROM cards WHERE name_key = ''`)
+	if err != nil {
+		return err
+	}
+	var pending [][2]string
+	for rows.Next() {
+		var id, name string
+		if err := rows.Scan(&id, &name); err != nil {
+			rows.Close()
+			return err
+		}
+		pending = append(pending, [2]string{id, normalizeNameKey(name)})
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	for _, item := range pending {
+		if _, err := db.sql.Exec(`UPDATE cards SET name_key = ? WHERE id = ?`, item[1], item[0]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// normalizeNameKey removes provider-specific punctuation and spacing from names.
+func normalizeNameKey(name string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(strings.TrimSpace(name)) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }

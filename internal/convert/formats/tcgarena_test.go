@@ -227,6 +227,63 @@ func TestLooksLikeTCGArena(t *testing.T) {
 	}
 }
 
+func TestFormatPiltoverCanonicalSections(t *testing.T) {
+	legend := cards.Ref{SetID: "VEN", CollectorNumber: 149}
+	champion := cards.Ref{SetID: "VEN", CollectorNumber: 68}
+	main := cards.Ref{SetID: "VEN", CollectorNumber: 1}
+	battlefield := cards.Ref{SetID: "VEN", CollectorNumber: 2}
+	rune := cards.Ref{SetID: "OGN", CollectorNumber: 1, IsRune: true}
+	sideboard := cards.Ref{SetID: "VEN", CollectorNumber: 3}
+	names := map[cards.Ref]string{
+		legend:      "Jayce - Defender of Tomorrow",
+		champion:    "Jayce, Brilliant Inventor",
+		main:        "Promising Future",
+		battlefield: "Sigil of the Storm",
+		rune:        "Body Rune",
+		sideboard:   "Turn to Dust",
+	}
+	d := deck.Deck{
+		ChosenChampion: &champion,
+		Main: []deck.Entry{
+			{Ref: legend, Count: 1, Section: deck.SectionLegend},
+			{Ref: main, Count: 3, Section: deck.SectionMain},
+			{Ref: battlefield, Count: 1, Section: deck.SectionBattlefield},
+			{Ref: rune, Count: 9, Section: deck.SectionRune},
+		},
+		Sideboard: []deck.Entry{
+			{Ref: sideboard, Count: 2, Section: deck.SectionSideboard},
+		},
+	}
+	nameFn := func(ref cards.Ref) (string, error) {
+		return names[ref], nil
+	}
+
+	got, err := formats.FormatPiltover(d, nameFn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `Legend:
+1 Jayce - Defender of Tomorrow
+
+Champion:
+1 Jayce, Brilliant Inventor
+
+MainDeck:
+3 Promising Future
+
+Battlefields:
+1 Sigil of the Storm
+
+Runes:
+9 Body Rune
+
+Sideboard:
+2 Turn to Dust`
+	if got != want {
+		t.Fatalf("FormatPiltover() =\n%s\nwant:\n%s", got, want)
+	}
+}
+
 func filterSection(entries []deck.Entry, section deck.Section) []deck.Entry {
 	var out []deck.Entry
 	for _, e := range entries {

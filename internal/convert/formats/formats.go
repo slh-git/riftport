@@ -215,9 +215,39 @@ func ParsePiltover(text string) (deck.Deck, error) {
 	return namesToDeck(entries)
 }
 
-// FormatPiltover renders a sectioned deck list; currently aliases FormatNames.
+// FormatPiltover renders the canonical Piltover section names and punctuation.
 func FormatPiltover(d deck.Deck, names func(cards.Ref) (string, error)) (string, error) {
-	return FormatNames(d, names)
+	var b strings.Builder
+	if err := writeNameSection(&b, "Legend:", filterSection(d.Main, deck.SectionLegend), names); err != nil {
+		return "", err
+	}
+	if d.ChosenChampion != nil {
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString("Champion:\n")
+		champName, err := names(*d.ChosenChampion)
+		if err != nil {
+			return "", err
+		}
+		fmt.Fprintf(&b, "1 %s\n", champName)
+	}
+	for _, section := range []struct {
+		title   string
+		section deck.Section
+	}{
+		{title: "MainDeck:", section: deck.SectionMain},
+		{title: "Battlefields:", section: deck.SectionBattlefield},
+		{title: "Runes:", section: deck.SectionRune},
+	} {
+		if err := writeNameSection(&b, section.title, filterSection(d.Main, section.section), names); err != nil {
+			return "", err
+		}
+	}
+	if err := writeNameSection(&b, "Sideboard:", d.Sideboard, names); err != nil {
+		return "", err
+	}
+	return strings.TrimRight(b.String(), "\n"), nil
 }
 
 // parseSectionHeader recognizes deck section header lines and returns the section type.

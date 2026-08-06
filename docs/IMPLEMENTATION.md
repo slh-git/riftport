@@ -78,7 +78,7 @@ riftport/
 
 | Function | Description |
 |----------|-------------|
-| `newUpdateDBCmd` | Creates Cobra command; opens DB, calls RiftScribe client, prints card count |
+| `newUpdateDBCmd` | Opens DB, refreshes from RiftCodex with RiftScribe fallback, and reports the selected source |
 
 ---
 
@@ -163,12 +163,13 @@ riftport/
 | `DB.Close` | Closes connection |
 | `DB.migrate` | Applies schema (cards, meta, cards_fts) |
 | `DB.UpsertCard` | Insert or update one card |
+| `DB.ReplaceCards` | Atomically replace the card snapshot, FTS index, and source metadata |
 | `DB.RebuildSearchIndex` | Rebuilds FTS5 from cards table |
 | `DB.SetMeta` / `GetMeta` | Key-value metadata (last_updated, source) |
 | `DB.Count` | Total card count |
 | `DB.GetByID` | Lookup by full ID (`ogn-265-298`) |
 | `DB.GetByRef` | Lookup by set + number + variant |
-| `DB.GetByName` | Exact case-insensitive name match |
+| `DB.GetByName` | Provider-agnostic lookup through a normalized name key |
 | `DB.Search` | FTS5 trigram search with rank |
 | `DB.scanCard` | Scans one row into `cards.Card` |
 | `ftsQuery` | Escapes query for FTS phrase match |
@@ -176,20 +177,21 @@ riftport/
 
 ---
 
-### `internal/fetch/riftscribe.go`
+### `internal/fetch/`
 
-**Purpose:** RiftScribe HTTP client used exclusively by `update-db`.
+**Purpose:** Complete card snapshot acquisition with ordered provider fallback.
 
-See [RIFTSCRIBE_API.md](RIFTSCRIBE_API.md) for endpoint schemas (`CardRead` vs `CardSummaryRead`), pagination, and what fields are available from each route.
+RiftCodex is the primary source; RiftScribe is attempted only if the complete RiftCodex fetch fails. Database replacement happens only after one provider returns a validated snapshot.
 
-Alternative data source: [RIFTCODEX_API.md](RIFTCODEX_API.md).
+See [RIFTCODEX_API.md](RIFTCODEX_API.md) and [RIFTSCRIBE_API.md](RIFTSCRIBE_API.md) for provider schemas.
 
 | Function | Description |
 |----------|-------------|
-| `NewClient` | Client with 30s timeout and default API base URL |
-| `Client.UpdateDB` | Paginates `/api/cards`, upserts all, rebuilds index, sets meta |
-| `Client.listCards` | GET one page; reads `X-Total-Count` header |
-| `toCard` | Maps API JSON to `cards.Card` |
+| `NewRiftCodexClient` | Primary client for 1-based `/cards?size=100&page=N` pagination |
+| `NewRiftScribeClient` | Backup client for `/api/cards?limit=200&offset=N` pagination |
+| `Provider.FetchCards` | Returns a complete in-memory card snapshot |
+| `UpdateDB` | Tries providers in order and atomically installs the first successful snapshot |
+| `toRiftCodexCard` / `toCard` | Map provider payloads to `cards.Card` |
 
 ---
 
@@ -288,7 +290,9 @@ Alternative data source: [RIFTCODEX_API.md](RIFTCODEX_API.md).
 
 ```text
 update-db:
-  RiftScribe API → fetch.Client → database.UpsertCard → RebuildSearchIndex → ~/.riftport/cards.db
+  RiftCodex API ─┐
+                 ├→ fetch.UpdateDB → database.ReplaceCards → ~/.riftport/cards.db
+  RiftScribe API ┘  (fallback)
 
 convert (name-based):
   stdin/file → formats.Parse* → Resolver (DB lookup) → formats.Format* → stdout

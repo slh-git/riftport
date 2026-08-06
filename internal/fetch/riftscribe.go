@@ -1,5 +1,5 @@
 // riftscribe.go — RiftScribe API client for update-db.
-// Paginates the public /api/cards endpoint and upserts into the local database.
+// Paginates the public /api/cards endpoint and returns a complete card snapshot.
 package fetch
 
 import (
@@ -13,20 +13,19 @@ import (
 	"time"
 
 	"github.com/slh/riftport/internal/cards"
-	"github.com/slh/riftport/internal/database"
 )
 
 const defaultBaseURL = "https://riftscribe.gg/api"
 
-// Client fetches card data from the RiftScribe HTTP API.
-type Client struct {
+// RiftScribeClient fetches card data from the RiftScribe HTTP API.
+type RiftScribeClient struct {
 	BaseURL    string
 	HTTPClient *http.Client
 }
 
-// NewClient returns a client with the default API base URL and timeout.
-func NewClient() *Client {
-	return &Client{
+// NewRiftScribeClient returns a client with the default API base URL and timeout.
+func NewRiftScribeClient() *RiftScribeClient {
+	return &RiftScribeClient{
 		BaseURL: defaultBaseURL,
 		HTTPClient: &http.Client{
 			Timeout: 30 * time.Second,
@@ -35,17 +34,17 @@ func NewClient() *Client {
 }
 
 type apiCard struct {
-	ID              string     `json:"id"`
-	Name            string     `json:"name"`
-	SetID           string     `json:"set_id"`
-	CollectorNumber int        `json:"collector_number"`
-	Variant         string     `json:"variant"`
-	Rarity          *string    `json:"rarity"`
-	Faction         *string    `json:"faction"`
-	Type            *string    `json:"type"`
-	Orientation     *string    `json:"orientation"`
-	Stats           *apiStats  `json:"stats"`
-	IsBanned        bool       `json:"is_banned"`
+	ID              string    `json:"id"`
+	Name            string    `json:"name"`
+	SetID           string    `json:"set_id"`
+	CollectorNumber int       `json:"collector_number"`
+	Variant         string    `json:"variant"`
+	Rarity          *string   `json:"rarity"`
+	Faction         *string   `json:"faction"`
+	Type            *string   `json:"type"`
+	Orientation     *string   `json:"orientation"`
+	Stats           *apiStats `json:"stats"`
+	IsBanned        bool      `json:"is_banned"`
 }
 
 type apiStats struct {
@@ -54,27 +53,28 @@ type apiStats struct {
 	Power  *int `json:"power"`
 }
 
-// UpdateDB downloads all cards, upserts them, rebuilds the search index, and sets metadata.
-func (c *Client) UpdateDB(ctx context.Context, db *database.DB) (int, error) {
+// Name identifies this provider in update metadata and user-facing output.
+func (c *RiftScribeClient) Name() string {
+	return "riftscribe"
+}
+
+// FetchCards downloads a complete card snapshot.
+func (c *RiftScribeClient) FetchCards(ctx context.Context) ([]cards.Card, error) {
 	offset := 0
 	limit := 200
-	total := 0
 	now := time.Now().UTC()
+	var out []cards.Card
 
 	for {
 		batch, countHeader, err := c.listCards(ctx, limit, offset)
 		if err != nil {
-			return total, err
+			return nil, err
 		}
 		if len(batch) == 0 {
 			break
 		}
 		for _, raw := range batch {
-			card := toCard(raw, now)
-			if err := db.UpsertCard(ctx, card); err != nil {
-				return total, err
-			}
-			total++
+			out = append(out, toCard(raw, now))
 		}
 		offset += len(batch)
 		if countHeader > 0 && offset >= countHeader {
@@ -84,21 +84,14 @@ func (c *Client) UpdateDB(ctx context.Context, db *database.DB) (int, error) {
 			break
 		}
 	}
-
-	if err := db.RebuildSearchIndex(ctx); err != nil {
-		return total, err
+	if len(out) == 0 {
+		return nil, fmt.Errorf("riftscribe returned no cards")
 	}
-	if err := db.SetMeta(ctx, "last_updated", now.Format(time.RFC3339)); err != nil {
-		return total, err
-	}
-	if err := db.SetMeta(ctx, "source", "riftscribe"); err != nil {
-		return total, err
-	}
-	return total, nil
+	return out, nil
 }
 
 // listCards fetches one page of cards from the API.
-func (c *Client) listCards(ctx context.Context, limit, offset int) ([]apiCard, int, error) {
+func (c *RiftScribeClient) listCards(ctx context.Context, limit, offset int) ([]apiCard, int, error) {
 	url := fmt.Sprintf("%s/cards?limit=%d&offset=%d", strings.TrimRight(c.BaseURL, "/"), limit, offset)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {

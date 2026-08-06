@@ -1,6 +1,6 @@
 # Riftcodex API Reference
 
-Reference for the [Riftcodex](https://riftcodex.com) public HTTP API — an alternative Riftbound card data source.
+Reference for the [Riftcodex](https://riftcodex.com) public HTTP API — Riftport's primary card data source.
 
 **Site:** https://riftcodex.com  
 **API base URL:** `https://api.riftcodex.com` (not `riftcodex.com/api`)  
@@ -42,10 +42,10 @@ Response shape (`Page[Card]`):
 ```json
 {
   "items": [ /* Card[] */ ],
-  "total": 1064,
+  "total": 1451,
   "page": 1,
   "size": 100,
-  "pages": 11
+  "pages": 15
 }
 ```
 
@@ -85,8 +85,10 @@ Riftcodex does **not** expose a separate `variant` field. Variants are encoded i
 | Alt art | `ogn-214a-298` | `alternate_art: true` |
 | Signature | `ogn-303*-298` | `signature: true` |
 | Overnumbered | `ogn-303-298` (same number, different name) | `overnumbered: true` |
+| Token | `sfd-t03` | no set-size suffix |
+| Special promo | `ven-sp2-006` | `sp` prefix before collector number |
 
-`riftbound_id` format: `{set}-{number}[variant]-{set_size}` (lowercase set).
+Most IDs use `{set}-{number}[variant]-{set_size}` (lowercase set); token and special-promo records use the exceptions above. Riftport preserves exceptional prefixes as local variants to avoid colliding with regular collector numbers.
 
 ---
 
@@ -147,7 +149,7 @@ curl "https://api.riftcodex.com/cards/tcgplayer/652771"
 | | RiftScribe | Riftcodex |
 |---|-----------|-----------|
 | Base URL | `riftscribe.gg/api` | `api.riftcodex.com` |
-| Total cards | ~950 | ~1064 |
+| Total records | ~950 | ~1451 (~1304 unique `riftbound_id` values) |
 | List endpoint | `CardSummaryRead` (subset) | Full `Card` |
 | Detail endpoint | `GET /api/cards/{id}` → `CardRead` | Same data in list; lookup via `/cards/riftbound/{id}` |
 | Pagination | `limit` + `offset`, max 200 | `size` + `page`, max 100 |
@@ -170,15 +172,17 @@ curl "https://api.riftcodex.com/cards/tcgplayer/652771"
 - `/cards/search?query=Scorcher` returned 0 results; `query=accelerate` works — search targets card text/keywords, not names. Use `/cards/name` for name lookups.
 - `/cards/name?name=...` returns HTTP 500; correct param is `exact=` or `fuzzy=`.
 - `/cards/riftbound/ogn-001a-298` returned `[]` when tested — alt-art IDs may not always resolve via this route.
+- Some names use a spaced hyphen where deck exporters use a comma (for example, `Jayce - Defender of Tomorrow`). Riftport stores these in canonical comma form and also normalizes lookup keys.
+- The list contains duplicate `riftbound_id` records, often an incomplete `new: true` preview plus a complete catalog record. Riftport deduplicates by `riftbound_id` and prefers non-preview records with clean-name and TCGPlayer metadata.
 
 ---
 
 ## Relevance to riftport
 
-Riftport currently uses RiftScribe (`internal/fetch/riftscribe.go`). Riftcodex is a viable alternative or supplement:
+Riftport uses Riftcodex as its primary `update-db` source and RiftScribe as an automatic backup. A complete Riftcodex snapshot is fetched before the local database is atomically replaced.
 
 **Advantages for riftport:**
-- Full card data in one paginated call (~11 requests at `size=100` for all cards).
+- Full card data in one paginated traversal (~15 requests at `size=100`), reduced to a stable snapshot by `riftbound_id`.
 - `text.plain` gives ability text without per-card detail fetches.
 - `tcgplayer_id` for marketplace integration.
 - `classification.domain[]` maps to riftport's `Faction` field (first domain, or join).

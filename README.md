@@ -56,7 +56,7 @@ Default database path: `~/.riftport/cards.db` (override with `--db`).
 
 ### `update-db`
 
-Fetches card metadata from the [RiftScribe](https://riftscribe.gg) public API and stores it locally. Rebuilds the search index when finished.
+Fetches a complete card snapshot from the [RiftCodex](https://riftcodex.com) public API and installs it atomically. If RiftCodex is unavailable, the command automatically falls back to [RiftScribe](https://riftscribe.gg). The selected source is shown in the command output and stored in database metadata.
 
 ```bash
 riftport update-db
@@ -79,13 +79,15 @@ cat deck.txt | riftport convert --from piltover --to deckcode
 | `auto`      | Detect deckcode, pixelborn, TTS, or name/sectioned text    |
 | `names`     | `3 Jinx, Loose Cannon` lines                               |
 | `piltover`  | Sectioned list (Legend, Main Deck, Battlefields, Runes)    |
+| `tcgarena`  | TCG Arena positional list with a Sideboard section         |
 | `tts`       | Space-separated `OGN-265-1` tokens                         |
 | `pixelborn` | Base64-encoded `$`-separated TTS tokens                    |
 | `deckcode`  | Piltover Archive / RiftMana share codes (`CI…`)            |
 
-**Output formats** (`--to`): `names`, `piltover`, `tts`, `pixelborn`, `deckcode`
+**Output formats** (`--to`): `names`, `piltover`, `tcgarena`, `tts`, `pixelborn`, `deckcode`
 
 Name-based output requires a populated local database. Code-based formats (`tts`, `pixelborn`, `deckcode`) work without name resolution.
+Name lookup ignores provider-specific punctuation, spacing, and case, so names such as `Jayce, Defender of Tomorrow` and `Jayce - Defender of Tomorrow` resolve to the same card.
 
 ### `inspect`
 
@@ -111,7 +113,7 @@ internal/
   cards/               Card model and code parsing (OGN-265, TTS tokens)
   database/            SQLite storage + FTS5 search index
   deck/                Canonical deck representation (main, sideboard, sections)
-  fetch/               Remote card acquisition (RiftScribe client)
+  fetch/               RiftCodex acquisition + RiftScribe fallback
   convert/
     convert.go         Detect → parse → resolve → render pipeline
     formats/           Per-format parsers and writers

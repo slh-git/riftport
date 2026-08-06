@@ -1,6 +1,6 @@
 # RiftScribe API Reference
 
-Reference for the [RiftScribe](https://riftscribe.gg) public HTTP API used by `riftport update-db`.
+Reference for the [RiftScribe](https://riftscribe.gg) public HTTP API used as the `riftport update-db` backup source when RiftCodex is unavailable.
 
 **OpenAPI spec:** https://riftscribe.gg/openapi.json  
 **Base URL:** `https://riftscribe.gg/api`
@@ -90,6 +90,6 @@ Relevant schema names:
 
 ---
 
-## What riftport uses today
+## How riftport uses RiftScribe
 
-`internal/fetch/riftscribe.go` paginates `GET /api/cards` and maps `CardSummaryRead` fields into `cards.Card`. It does **not** call `/api/cards/{card_id}`, so description, keywords, flavor text, and art metadata are not stored locally.
+`internal/fetch/riftscribe.go` paginates `GET /api/cards` and maps `CardSummaryRead` fields into `cards.Card` after the primary RiftCodex provider fails. It does **not** call `/api/cards/{card_id}`, so description, keywords, flavor text, and art metadata are not stored locally.
